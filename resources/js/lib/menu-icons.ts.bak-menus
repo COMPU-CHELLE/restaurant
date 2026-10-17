@@ -1,0 +1,43 @@
+import {
+    Armchair,
+    Banknote,
+    Boxes,
+    ClipboardList,
+    CreditCard,
+    LayoutGrid,
+    MapPin,
+    Package,
+    Printer,
+    Settings,
+    ShieldCheck,
+    Tags,
+    TrendingUp,
+    Truck,
+    Users,
+    Wallet,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+/** Nombre de ícono guardado en la tabla levels/modules → componente de lucide-react. */
+const icons: Record<string, LucideIcon> = {
+    LayoutGrid,
+    Armchair,
+    ClipboardList,
+    Banknote,
+    Package,
+    Tags,
+    Boxes,
+    Truck,
+    Settings,
+    MapPin,
+    Wallet,
+    CreditCard,
+    Printer,
+    ShieldCheck,
+    Users,
+    BarChart3: TrendingUp,
+};
+
+export function menuIcon(name: string | null | undefined): LucideIcon {
+    return (name && icons[name]) || LayoutGrid;
+}

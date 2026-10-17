@@ -1,0 +1,24 @@
+<?php
+
+/*
+| Qué ámbitos de menú ve cada rol (el ámbito de un módulo sale de su URL):
+|   SOPORTE   → /soporte/…   gestión global de la plataforma
+|   ADMIN     → /admin/…     administración de la empresa
+|   OPERATIVO → el resto     lo que se asigna por perfil
+|
+| Para cambiar lo que ve un rol basta editar su lista. Ejemplos:
+|   'ADMIN' => ['ADMIN']                 el administrador solo ve Administración
+|   'ADMIN' => ['ADMIN', 'OPERATIVO']    el administrador además opera (caja, mesas, catálogo…)
+|
+| Esto define el MENÚ. Quién puede abrir cada URL lo deciden las rutas (role:… y permission).
+*/
+return [
+    'scopes' => [
+        'SOPORTE' => ['SOPORTE'],
+        'ADMIN' => ['ADMIN'],
+        'USER' => ['OPERATIVO'],
+    ],
+
+    // Súbelo cuando cambies el árbol o estas reglas: invalida el menú guardado en las sesiones abiertas.
+    'version' => 4,
+];

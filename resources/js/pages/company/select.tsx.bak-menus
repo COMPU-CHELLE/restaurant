@@ -1,0 +1,59 @@
+import { Head, router } from '@inertiajs/react';
+import { Building2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+type CompanyOption = {
+    id: number;
+    name: string;
+    code: string;
+    role: string | null;
+};
+
+type Props = {
+    companies: CompanyOption[];
+    currentId: number | null;
+};
+
+export default function CompanySelect({ companies, currentId }: Props) {
+    return (
+        <>
+            <Head title="Seleccionar empresa" />
+
+            {companies.length === 0 ? (
+                <p className="text-center text-sm text-muted-foreground">
+                    No hay empresas disponibles. Si eres de soporte, aprovisiona
+                    una con <code>php artisan tenant:provision CODIGO</code>.
+                </p>
+            ) : (
+                <div className="flex flex-col gap-3">
+                    {companies.map((company) => (
+                        <Button
+                            key={company.id}
+                            variant={
+                                company.id === currentId ? 'default' : 'outline'
+                            }
+                            className="h-auto justify-start gap-3 py-3"
+                            onClick={() =>
+                                router.post(`/company/select/${company.id}`)
+                            }
+                        >
+                            <Building2 className="size-4 shrink-0" />
+                            <span className="flex flex-col items-start">
+                                <span>{company.name}</span>
+                                <span className="text-xs opacity-70">
+                                    {company.code}
+                                    {company.role ? ` · ${company.role}` : ''}
+                                </span>
+                            </span>
+                        </Button>
+                    ))}
+                </div>
+            )}
+        </>
+    );
+}
+
+CompanySelect.layout = {
+    title: 'Selecciona una empresa',
+    description: 'Elige con qué restaurante quieres trabajar.',
+};
