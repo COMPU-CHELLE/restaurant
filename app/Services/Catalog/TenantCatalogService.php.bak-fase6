@@ -1,0 +1,83 @@
+<?php
+
+namespace App\Services\Catalog;
+
+use App\Models\Support\CatalogItem as SupportItem;
+use App\Models\Tenant\CatalogItem;
+
+/** Parámetros de la empresa activa, con importación desde los de soporte. */
+class TenantCatalogService extends CatalogService
+{
+    protected string $model = CatalogItem::class;
+
+    public function toRow(\Illuminate\Database\Eloquent\Model $item): array
+    {
+        return parent::toRow($item) + ['imported' => $item->source_id !== null];
+    }
+
+    /** Elementos activos de soporte que esta empresa todavía no tiene. */
+    public function importable(string $type): int
+    {
+        $this->definition($type);
+
+        return SupportItem::query()
+            ->where('type', $type)->where('state', 1)
+            ->whereNotIn('code', CatalogItem::query()->where('type', $type)->pluck('code'))
+            ->count();
+    }
+
+    /** @return array{new:int, updated:int, skipped:int} */
+    protected function importType(string $type, bool $update): array
+    {
+        $new = $updated = $skipped = 0;
+        $sources = SupportItem::query()->where('type', $type)->where('state', 1)->get();
+
+        $this->transaction(function () use ($type, $update, $sources, &$new, &$updated, &$skipped) {
+            foreach ($sources as $source) {
+                $local = CatalogItem::query()->where('type', $type)->where('code', $source->code)->first();
+
+                if (! $local) {
+                    (new CatalogItem())->forceFill($this->stamp([
+                        'type' => $type, 'code' => $source->code, 'name' => $source->name, 'detail' => $source->detail,
+                        'extra' => $source->extra, 'state' => 1, 'source_id' => $source->codmov, 'imported_at' => now(),
+                    ], true))->save();
+                    $new++;
+                } elseif ($update && (int) $local->source_id === (int) $source->codmov) {
+                    // Solo se actualizan los importados; los creados a mano con el mismo código no se tocan.
+                    $local->forceFill(['name' => $source->name, 'detail' => $source->detail, 'extra' => $source->extra])->save();
+                    $updated++;
+                } else {
+                    $skipped++;
+                }
+            }
+        });
+
+        return compact('new', 'updated', 'skipped');
+    }
+
+    public function import(string $type, bool $update = false): array
+    {
+        $definition = $this->definition($type);
+        $result = $this->importType($type, $update);
+
+        return ['data' => $result, 'flash' => $this->toast($this->summary($definition['label'], $result), $result['new'] + $result['updated'] > 0 ? 'success' : 'info')];
+    }
+
+    public function importAll(bool $update = false): array
+    {
+        $total = ['new' => 0, 'updated' => 0, 'skipped' => 0];
+
+        foreach (array_keys(config('catalogs.types')) as $type) {
+            foreach ($this->importType($type, $update) as $key => $value) {
+                $total[$key] += $value;
+            }
+        }
+
+        return ['data' => $total, 'flash' => $this->toast($this->summary('Todos los parámetros', $total), $total['new'] + $total['updated'] > 0 ? 'success' : 'info')];
+    }
+
+    protected function summary(string $label, array $result): string
+    {
+        return "{$label}: {$result['new']} nuevos, {$result['updated']} actualizados, {$result['skipped']} omitidos.";
+    }
+}

@@ -47,7 +47,7 @@ abstract class BaseService
 
     public function store(array $payload): array
     {
-        return DB::transaction(function () use ($payload) {
+        return $this->transaction(function () use ($payload) {
             $record = new $this->model();
             $record->forceFill($this->stamp($this->onlyFields($payload), true))->save();
 
@@ -57,7 +57,7 @@ abstract class BaseService
 
     public function update(Model $record, array $payload): array
     {
-        return DB::transaction(function () use ($record, $payload) {
+        return $this->transaction(function () use ($record, $payload) {
             $record->forceFill($this->stamp($this->onlyFields($payload), false))->save();
 
             return ['data' => $record, 'flash' => $this->toast("{$this->label} actualizado correctamente.")];
@@ -71,6 +71,12 @@ abstract class BaseService
         $text = (int) $record->state === 1 ? 'activado' : 'inactivado';
 
         return ['data' => $record, 'flash' => $this->toast("{$this->label} {$text}.")];
+    }
+
+    /** Transacción en la conexión del modelo (los modelos del tenant no usan la conexión por defecto). */
+    protected function transaction(callable $callback): mixed
+    {
+        return DB::connection((new $this->model())->getConnectionName())->transaction($callback);
     }
 
     protected function query(): Builder

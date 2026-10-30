@@ -1,0 +1,69 @@
+<?php
+
+namespace App\Http\Controllers\Catalog;
+
+use App\Http\Controllers\Concerns\CrudResponses;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Catalog\CatalogItemRequest;
+use App\Services\Catalog\CatalogService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
+
+abstract class BaseCatalogController extends Controller
+{
+    use CrudResponses;
+
+    abstract protected function service(): CatalogService;
+
+    /** 'soporte' o 'admin': define la página y las URLs. */
+    abstract protected function scope(): string;
+
+    /** Datos extra para la página (la empresa agrega lo importable). */
+    protected function extras(string $type): array
+    {
+        return [];
+    }
+
+    public function index(Request $request): Response
+    {
+        $service = $this->service();
+        $types = $service->types();
+
+        $type = (string) $request->input('type');
+        $type = in_array($type, array_column($types, 'key'), true) ? $type : $types[0]['key'];
+
+        $filters = $this->tableFilters($request);
+
+        return Inertia::render($this->scope() . '/parametros', [
+            'types' => $types,
+            'current' => $type,
+            'definition' => $service->definition($type),
+            'items' => $service->paginateType($type, $filters, $filters['per_page']),
+            'filters' => $filters + ['type' => $type],
+            'references' => $service->references($type),
+            'extras' => $this->extras($type),
+        ]);
+    }
+
+    public function store(CatalogItemRequest $request, string $type): RedirectResponse
+    {
+        return $this->done($this->service()->createItem($type, $request->validated()));
+    }
+
+    public function update(CatalogItemRequest $request, string $type, int $item): RedirectResponse
+    {
+        return $this->done($this->service()->updateItem($type, $item, $request->validated()));
+    }
+
+    public function toggle(string $type, int $item): RedirectResponse
+    {
+        return $this->done($this->service()->toggleItem($type, $item));
+    }
+
+    public function destroy(string $type, int $item): RedirectResponse
+    {
+        return $this->done($this->service()->destroyItem($type, $item));
+    }
+}

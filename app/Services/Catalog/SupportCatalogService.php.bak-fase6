@@ -1,0 +1,10 @@
+<?php
+
+namespace App\Services\Catalog;
+
+use App\Models\Support\CatalogItem;
+
+class SupportCatalogService extends CatalogService
+{
+    protected string $model = CatalogItem::class;
+}

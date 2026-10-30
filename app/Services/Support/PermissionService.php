@@ -67,12 +67,10 @@ class PermissionService
                 ->flip();
         }
 
-        $levels = Level::query()
-            ->where('state', 1)
-            ->where('type', 'LEVEL')
-            ->orderBy('code')
-            ->get()
-            ->groupBy('parent');
+        // LEVEL cuelga de un módulo (parent = código del módulo); ITEM cuelga de un nivel (parent = código del nivel).
+        $nodes = Level::query()->where('state', 1)->orderBy('code')->get();
+        $levels = $nodes->where('type', 'LEVEL')->groupBy('parent');
+        $items = $nodes->where('type', 'ITEM')->groupBy('parent');
 
         $rank = ['SOPORTE' => 0, 'OPERATIVO' => 1, 'ADMIN' => 2];
         $menu = [];
@@ -84,19 +82,24 @@ class PermissionService
                 continue;
             }
 
-            $items = [];
+            $entries = [];
 
             foreach ($levels->get($module->code, collect()) as $level) {
                 if ($allowed !== null && ! $allowed->has((int) $level->codmov)) {
                     continue;
                 }
 
-                $items[] = ['title' => $level->name, 'href' => $level->url, 'icon' => $level->icon];
+                $children = $items->get($level->code, collect())
+                    ->map(fn ($child) => ['title' => $child->name, 'href' => $child->url, 'icon' => $child->icon])
+                    ->values()
+                    ->all();
+
+                $entries[] = ['title' => $level->name, 'href' => $level->url, 'icon' => $level->icon, 'children' => $children];
             }
 
-            if ($items) {
+            if ($entries) {
                 $menu[] = [
-                    'title' => $module->name, 'icon' => $module->icon, 'items' => $items,
+                    'title' => $module->name, 'icon' => $module->icon, 'items' => $entries,
                     '_rank' => $rank[$scope], '_code' => $module->code,
                 ];
             }

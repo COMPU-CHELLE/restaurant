@@ -250,7 +250,7 @@ export default function Factus({ configs, filters, options }: Props) {
                 </div>
 
                 <DataTable
-                    url={URL}
+                    url={`${URL}/configuracion`}
                     data={configs}
                     filters={filters}
                     columns={columns}
@@ -374,6 +374,6 @@ export default function Factus({ configs, filters, options }: Props) {
 Factus.layout = {
     breadcrumbs: [
         { title: 'Soporte', href: '/soporte/empresas' },
-        { title: 'Factus', href: '/soporte/factus' },
+        { title: 'Factus', href: '/soporte/factus/configuracion' },
     ],
 };

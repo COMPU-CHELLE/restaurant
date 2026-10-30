@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('empadd')->nullable();
             $table->string('emppho')->nullable();
             $table->string('empema')->nullable();
-            $table->string('country_code', 2)->default('CO');
+            $table->string('codcoi', 2)->default('CO');
             // Aprovisionamiento recuperable por etapas
             $table->string('provision_status', 20)->default('pending');
             $table->string('provision_step', 40)->nullable();

@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Admin\Configuration\AreaController;
 
 /*
 |--------------------------------------------------------------------------
@@ -21,8 +20,9 @@ $place = fn (string $url, string $title) => Route::inertia($url, 'module-placeho
 // ---- SOPORTE: gestión global
 Route::middleware(['auth', 'verified', 'soporte', 'role:SOPORTE'])->group(function () use ($place) {
     foreach ([
-        '/soporte/parametros' => 'Parámetros',
-        '/soporte/bitacora' => 'Bitácora global',
+        '/soporte/facturas' => 'Facturas',
+        '/soporte/factus/historial' => 'Historial de emitidos y errores',
+        '/soporte/factus/consumo' => 'Consumo vs plan adquirido',
     ] as $url => $title) {
         $place($url, $title);
     }
@@ -31,59 +31,55 @@ Route::middleware(['auth', 'verified', 'soporte', 'role:SOPORTE'])->group(functi
 // ---- ADMIN: administración de la empresa activa
 Route::middleware(['auth', 'verified', 'restaurant', 'role:ADMIN,SOPORTE'])->group(function () use ($place) {
     foreach ([
-        '/admin/empresa' => 'Datos de la empresa',
-        '/admin/usuarios' => 'Usuarios',
-        '/admin/perfiles' => 'Perfiles',
-        '/admin/parametros' => 'Parámetros',
-        '/admin/bitacora' => 'Bitácora de la empresa',
-        '/admin/configuracion/cajas' => 'Cajas registradoras',
-        '/admin/configuracion/metodos-pago' => 'Métodos de pago',
-        '/admin/configuracion/impresoras' => 'Impresoras',
-        '/admin/configuracion/tipos-movimiento' => 'Tipos de movimientos',
-        '/admin/configuracion/tipos-cuenta' => 'Tipos de cuentas',
-        '/admin/configuracion/impuestos' => 'Impuestos',
-        '/admin/configuracion/tipos-documento' => 'Tipos de documento',
-        '/admin/configuracion/estados-pedido' => 'Estados de pedidos',
-        '/admin/configuracion/motivos-anulacion' => 'Motivos de anulación',
-        '/admin/configuracion/unidades' => 'Unidades de medida',
-        '/admin/configuracion/motivos-inventario' => 'Motivos de inventario',
-        '/admin/configuracion/areas-preparacion' => 'Áreas de preparación',
+        '/admin/asignar' => 'Asignar permisos',
+        '/admin/facturas' => 'Facturas',
+        '/admin/impresiones/comandas' => 'Comandas',
     ] as $url => $title) {
         $place($url, $title);
     }
 });
-
-// ---- ADMIN: editor de zonas y mesas
-Route::middleware(['auth', 'verified', 'restaurant', 'role:ADMIN,SOPORTE'])
-    ->prefix('configuracion/areas')->name('admin.areas.')
-    ->controller(AreaController::class)->group(function () {
-        Route::get('/', 'index')->name('index');
-        Route::post('/', 'storeArea')->name('store');
-        Route::put('/{area}', 'updateArea')->whereNumber('area')->name('update');
-        Route::delete('/{area}', 'destroyArea')->whereNumber('area')->name('destroy');
-        Route::post('/{area}/mesas', 'storeTable')->whereNumber('area')->name('tables.store');
-        Route::put('/{area}/mesas/{table}', 'updateTable')->whereNumber('area')->whereNumber('table')->name('tables.update');
-        Route::delete('/{area}/mesas/{table}', 'destroyTable')->whereNumber('area')->whereNumber('table')->name('tables.destroy');
-    });
-
-Route::middleware(['auth', 'verified', 'restaurant', 'role:ADMIN,SOPORTE'])
-    ->get('/admin/configuracion/areas', fn () => redirect('/configuracion/areas'));
 
 // ---- OPERATIVO: según el perfil del usuario
 Route::middleware(['auth', 'verified', 'restaurant'])->group(function () use ($place) {
     foreach ([
         '/operacion/mesas' => 'Mesas',
         '/operacion/ordenes' => 'Órdenes',
-        '/operacion/caja' => 'Caja',
-        '/catalogo/productos' => 'Productos',
-        '/catalogo/categorias' => 'Categorías',
         '/inventario/movimientos' => 'Movimientos de inventario',
-        '/terceros/contactos' => 'Clientes y proveedores',
         '/reportes/ventas' => 'Ventas',
     ] as $url => $title) {
         $place($url, $title)->middleware('permission');
     }
 });
 
+// ---- Integración Factus Pay (recaudos QR). La confirmación no marca la orden pagada automáticamente:
+// el estado debe verificarse en la API antes de registrar el pago en caja.
+Route::middleware(['auth', 'verified', 'restaurant'])->prefix('operacion/factus-pay')->name('factus-pay.')->group(function () {
+    Route::post('recaudos', [\App\Http\Controllers\FactusPayController::class, 'create'])->name('collections.create');
+    Route::get('recaudos/{reference}', [\App\Http\Controllers\FactusPayController::class, 'status'])->name('collections.status');
+});
+
+// Emisión de factura electrónica desde una orden pagada.
+Route::middleware(['auth', 'verified', 'restaurant'])->prefix('operacion/ordenes')->name('orders.')->group(function () {
+    Route::post('{order}/factus/emitir', [\App\Http\Controllers\RestaurantFactusController::class, 'emit'])->whereNumber('order')->name('factus.emit');
+});
+
 // ---- SOPORTE: pantallas reales (empresas y usuarios)
 require __DIR__.'/support.php';
+
+// ---- ADMIN: pantallas reales (empresa, usuarios y perfiles)
+require __DIR__.'/admin.php';
+
+// ---- Parámetros (catálogos) y Bitácora de soporte y de administración
+require __DIR__.'/params.php';
+
+// ---- Fase 7: catalog
+require __DIR__.'/catalog.php';
+
+// ---- Fase 7: areas
+require __DIR__.'/areas.php';
+
+// ---- Fase 8: config
+require __DIR__.'/config.php';
+
+// ---- Fase 9: operation
+require __DIR__.'/operation.php';

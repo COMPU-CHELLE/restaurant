@@ -51,6 +51,14 @@ return Application::configure(basePath: dirname(__DIR__))
             ResolveUserContext::class,
             LoadUserPermissions::class,
         ]);
+        // El binding implicito de modelos del tenant (p. ej. Area $area) necesita la base ya elegida:
+        // la cadena multi-tenant debe correr ANTES que SubstituteBindings.
+        if (method_exists($middleware, 'prependToPriorityList')) {
+            $middleware->prependToPriorityList(\Illuminate\Routing\Middleware\SubstituteBindings::class, ResolveUserContext::class);
+            $middleware->appendToPriorityList(ResolveUserContext::class, EnsureCompanySelected::class);
+            $middleware->appendToPriorityList(EnsureCompanySelected::class, SetTenantConnection::class);
+            $middleware->appendToPriorityList(SetTenantConnection::class, LoadUserPermissions::class);
+        }
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

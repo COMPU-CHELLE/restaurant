@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 
 // La pantalla inicial es el login: un invitado que entra a /dashboard es enviado a /login.
@@ -14,7 +15,8 @@ Route::middleware(['auth', 'verified', 'context'])->prefix('company')->name('com
 
 // Todo lo operativo: contexto → empresa elegida → base del tenant → menú y permisos.
 Route::middleware(['auth', 'verified', 'restaurant'])->group(function () {
-    Route::inertia('dashboard', 'dashboard')->name('dashboard');
+    // Un solo /dashboard: según el rol muestra el de soporte, el del administrador o el del usuario.
+    Route::get('dashboard', DashboardController::class)->name('dashboard');
 });
 
 require __DIR__.'/restaurant.php';

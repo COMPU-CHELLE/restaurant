@@ -3,45 +3,50 @@
 namespace App\Services\Factus;
 
 use App\Models\Support\FactusService;
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\Response;
-use RuntimeException;
+use Illuminate\Support\Facades\Http;
 
-/**
- * Base de los servicios que llaman a la API de Factus (documentos, rangos, adquirentes…).
- * Diferencia con Chellnova: recibe la configuración de forma explícita en lugar de leer
- * company_id de la sesión, así también funciona en colas y comandos.
- */
+use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\App;
+
 abstract class FactusHttpService
 {
-    public function __construct(
-        protected FactusService $factus,
-        protected FactusAuthService $auth,
-    ) {
+    protected FactusService $factus;
+    protected FactusAuthService $auth;
+
+    public function __construct()
+    {
+        $companyId = Session::get('company_id');
+        $this->factus = FactusService::where('codemp', $companyId)
+            ->where('active', 1)
+            ->firstOrFail();
+        $this->auth = App::make(FactusAuthService::class);
     }
 
-    protected function client(): PendingRequest
+    protected function client()
     {
-        return \Illuminate\Support\Facades\Http::withToken($this->auth->getToken($this->factus))
-            ->acceptJson()
-            ->timeout(30);
+        return Http::withToken(
+            $this->auth->getToken($this->factus)
+        )
+        ->acceptJson()
+        ->timeout(30);
     }
 
     protected function baseUrl(): string
     {
-        return rtrim($this->factus->base_url, '/') . '/' . trim($this->factus->api_version, '/');
+        $baseurl = $this->factus->base_url . '/' . $this->factus->api_version;
+        return rtrim($baseurl, '/');
     }
 
-    protected function handleResponse(Response $response): array
+    protected function handleResponse($response)
     {
         if (! $response->successful()) {
-            throw new RuntimeException(json_encode([
+            throw new \Exception(json_encode([
                 'message' => 'Factus API error',
-                'status' => $response->status(),
-                'body' => $response->json() ?? $response->body(),
+                'status'  => $response->status(),
+                'body'    => $response->json() ?? $response->body(),
             ]));
         }
 
-        return $response->json() ?? [];
+        return $response->json();
     }
 }

@@ -2,6 +2,8 @@ export type MenuItem = {
     title: string;
     href: string;
     icon: string | null;
+    /** Subitems anidados (por ejemplo, cada catálogo bajo Parámetros). */
+    children?: MenuItem[];
 };
 
 export type MenuModule = {

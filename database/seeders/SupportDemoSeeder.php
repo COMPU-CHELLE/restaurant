@@ -13,12 +13,21 @@ use App\Models\Tenant\ProfilePermission;
 use App\Models\User;
 use App\Services\Tenant\TenantManager;
 use Illuminate\Database\Seeder;
+use App\Models\Support\Soflog;
 use Illuminate\Support\Facades\DB;
 
 class SupportDemoSeeder extends Seeder
 {
     public function run(): void
     {
+        $audit = [
+            'host'   => 'SYSTEM',
+            'codope' => 'SOPORTE',
+            'basdat' => 'chellnova',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
         if (app()->isProduction()) {
             $this->command?->error(
                 'Este seeder solo se ejecuta en desarrollo.'
@@ -51,10 +60,32 @@ class SupportDemoSeeder extends Seeder
             'empnom' => 'Restaurante Demo',
             'empnit' => '900000000',
             'empdig' => '1',
-            'country_code' => 'CO',
+            'codcoi' => 'CO',
             'state' => 1,
         ]
     );
+
+    Soflog::firstOrCreate(
+        [
+            'tipeve' => 'CREATE',
+            'codmod' => 'SYSTEM',
+            'detail' => 'Se registró la empresa ' . $company->name,
+        ],
+        [
+            'period'     => date('Y-m'),
+            'anopro'     => date('Y'),
+            'mespro'     => date('m'),
+            'diapro'     => date('d'),
+            'fecope'     => now(),
+            'old_values' => null,
+            'new_values' => $company->toArray(),
+            'host'       => $audit['host'],
+            'codope'     => $audit['codope'],
+            'basdat'     => $audit['basdat'],
+        ]
+    );
+
+    $this->command->info("✅ Empresa $company->code creada corretatamente.");
 
     $company2 = Company::updateOrCreate(
         ['code' => 'REST002'],
@@ -62,11 +93,32 @@ class SupportDemoSeeder extends Seeder
             'empnom' => 'Restaurante Demo 2',
             'empnit' => '900000001',
             'empdig' => '2',
-            'country_code' => 'CO',
+            'codcoi' => 'CO',
             'state' => 1,
         ]
     );
 
+    Soflog::firstOrCreate(
+        [
+            'tipeve' => 'CREATE',
+            'codmod' => 'SYSTEM',
+            'detail' => 'Se registró la empresa ' . $company2->name,
+        ],
+        [
+            'period'     => date('Y-m'),
+            'anopro'     => date('Y'),
+            'mespro'     => date('m'),
+            'diapro'     => date('d'),
+            'fecope'     => now(),
+            'old_values' => null,
+            'new_values' => $company->toArray(),
+            'host'       => $audit['host'],
+            'codope'     => $audit['codope'],
+            'basdat'     => $audit['basdat'],
+        ]
+    );
+
+    $this->command->info("✅ Empresa $company2->code creada corretatamente.");
     /*
     |--------------------------------------------------------------------------
     | 2. Crear las bases de datos y ejecutar sus migraciones
@@ -96,6 +148,28 @@ class SupportDemoSeeder extends Seeder
             ]
         );
 
+        Soflog::firstOrCreate(
+            [
+                'tipeve' => 'CREATE',
+                'codmod' => 'SYSTEM',
+                'detail' => 'Se registró el prefil ' . $gerente->name,
+            ],
+            [
+                'period'     => date('Y-m'),
+                'anopro'     => date('Y'),
+                'mespro'     => date('m'),
+                'diapro'     => date('d'),
+                'fecope'     => now(),
+                'old_values' => null,
+                'new_values' => $gerente->toArray(),
+                'host'       => $audit['host'],
+                'codope'     => $audit['codope'],
+                'basdat'     => $audit['basdat'],
+            ]
+        );
+
+        $this->command->info("✅ Perfil $gerente->code creado corretatamente.");
+
         $mesero = Profile::updateOrCreate(
             ['code' => 'MESERO'],
             [
@@ -104,6 +178,28 @@ class SupportDemoSeeder extends Seeder
                 'state' => 1,
             ]
         );
+
+        Soflog::firstOrCreate(
+            [
+                'tipeve' => 'CREATE',
+                'codmod' => 'SYSTEM',
+                'detail' => 'Se registró el prefil ' . $mesero->name,
+            ],
+            [
+                'period'     => date('Y-m'),
+                'anopro'     => date('Y'),
+                'mespro'     => date('m'),
+                'diapro'     => date('d'),
+                'fecope'     => now(),
+                'old_values' => null,
+                'new_values' => $mesero->toArray(),
+                'host'       => $audit['host'],
+                'codope'     => $audit['codope'],
+                'basdat'     => $audit['basdat'],
+            ]
+        );
+
+        $this->command->info("✅ Perfil $mesero->code creado corretatamente.");
 
         /*
          * 3. Permisos del GERENTE.
@@ -165,12 +261,16 @@ class SupportDemoSeeder extends Seeder
             ]);
         }
 
+        $this->command->info("✅ Permisos Asignados al perfil $gerente->code corretatamente.");
+
         foreach (array_unique($meseroPermissions) as $permissionId) {
             ProfilePermission::firstOrCreate([
                 'profile_id' => $mesero->codmov,
                 'permission_id' => $permissionId,
             ]);
         }
+
+        $this->command->info("✅ Permisos Asignados al perfil $mesero->code corretatamente.");
 
         /*
          * 5. Crear los usuarios de demostración.
@@ -195,6 +295,26 @@ class SupportDemoSeeder extends Seeder
             }
 
             $user->save();
+
+            Soflog::firstOrCreate(
+                [
+                    'tipeve' => 'CREATE',
+                    'codmod' => 'SYSTEM',
+                    'detail' => 'Se registró el prefil ' . $user->name,
+                ],
+                [
+                    'period'     => date('Y-m'),
+                    'anopro'     => date('Y'),
+                    'mespro'     => date('m'),
+                    'diapro'     => date('d'),
+                    'fecope'     => now(),
+                    'old_values' => null,
+                    'new_values' => $user->toArray(),
+                    'host'       => 'SYSTEM',
+                    'codope'     => 'SOPORTE',
+                    'basdat'     => 'chellnova',
+                ]
+            );
 
             return $user;
         };

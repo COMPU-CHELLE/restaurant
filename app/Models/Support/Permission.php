@@ -23,4 +23,9 @@ class Permission extends Model
     {
         return $this->belongsTo(Level::class, 'codniv', 'codmov');
     }
+
+    public function item()
+    {
+        return $this->belongsTo(Level::class, 'codite', 'codmov');
+    }
 }

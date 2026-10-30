@@ -1,0 +1,69 @@
+<?php
+
+/*
+|--------------------------------------------------------------------------
+| Catálogos de parámetros
+|--------------------------------------------------------------------------
+| Un mismo motor sirve para todos: soporte los define por defecto (Soporte → Parámetros) y cada empresa
+| los importa o ajusta (Administración → Parámetros). Para agregar un catálogo basta una entrada aquí.
+|
+| fields: campos propios del catálogo, guardados en "extra".
+|   type: text | number | select (options) | catalog (source = otro catálogo)
+| scope: both (predeterminado) | tenant (solo de la empresa: no lo define ni importa soporte)
+*/
+return [
+    'types' => [
+        'currencies' => ['label' => 'Monedas', 'fields' => [
+            ['key' => 'symbol', 'label' => 'Símbolo', 'type' => 'text', 'required' => true, 'max' => 5],
+            ['key' => 'decimals', 'label' => 'Decimales', 'type' => 'number', 'required' => true, 'min' => 0, 'max' => 4, 'step' => 1],
+        ]],
+        'tax_types' => ['label' => 'Impuestos', 'fields' => [
+            ['key' => 'dian_code', 'label' => 'Código DIAN', 'type' => 'text', 'max' => 5, 'hint' => 'Ej.: 01 = IVA, 04 = INC'],
+        ]],
+        'tax_rates' => ['label' => 'Tarifas de impuestos', 'fields' => [
+            ['key' => 'tax_type', 'label' => 'Impuesto', 'type' => 'catalog', 'source' => 'tax_types', 'required' => true],
+            ['key' => 'percentage', 'label' => 'Porcentaje', 'type' => 'number', 'required' => true, 'min' => 0, 'max' => 100, 'step' => 0.01],
+        ]],
+        'units' => ['label' => 'Unidades de medida', 'fields' => [
+            ['key' => 'abbreviation', 'label' => 'Abreviatura', 'type' => 'text', 'required' => true, 'max' => 10],
+            ['key' => 'dian_code', 'label' => 'Código DIAN / UN-ECE', 'type' => 'text', 'max' => 10],
+        ]],
+        'document_classes' => ['label' => 'Tipos de documento', 'fields' => [
+            ['key' => 'factus_id', 'label' => 'ID en Factus', 'type' => 'number', 'min' => 1, 'step' => 1],
+        ]],
+        'payment_forms' => ['label' => 'Formas de pago', 'fields' => []],
+        'payment_means' => ['label' => 'Medios de pago (DIAN)', 'fields' => []],
+        'account_types' => ['label' => 'Tipos de cuentas', 'fields' => [
+            ['key' => 'nature', 'label' => 'Naturaleza', 'type' => 'select', 'required' => true,
+                'options' => ['D' => 'Débito', 'C' => 'Crédito']],
+        ]],
+        'retention_types' => ['label' => 'Tipos de retenciones', 'fields' => [
+            ['key' => 'percentage', 'label' => 'Porcentaje', 'type' => 'number', 'min' => 0, 'max' => 100, 'step' => 0.01],
+        ]],
+        'movement_types' => ['label' => 'Tipos de movimiento de inventario', 'fields' => [
+            ['key' => 'direction', 'label' => 'Sentido', 'type' => 'select', 'required' => true,
+                'options' => ['IN' => 'Entrada', 'OUT' => 'Salida']],
+        ]],
+        'economic_activities' => ['label' => 'Actividades económicas (CIIU)', 'fields' => []],
+        // Clases del plan único de cuentas (1 Activo, 2 Pasivo…).
+        'pdu_types' => ['label' => 'Tipos de PDU', 'fields' => [
+            ['key' => 'nature', 'label' => 'Naturaleza', 'type' => 'select', 'required' => true,
+                'options' => ['D' => 'Débito', 'C' => 'Crédito']],
+        ]],
+        'accounts' => ['label' => 'Cuentas', 'fields' => [
+            ['key' => 'pdu_type', 'label' => 'Clase (PDU)', 'type' => 'catalog', 'source' => 'pdu_types', 'required' => true],
+            ['key' => 'level', 'label' => 'Nivel', 'type' => 'number', 'required' => true, 'min' => 1, 'max' => 6, 'step' => 1,
+                'hint' => '1 clase, 2 grupo, 3 cuenta, 4 subcuenta…'],
+            ['key' => 'nature', 'label' => 'Naturaleza', 'type' => 'select',
+                'options' => ['D' => 'Débito', 'C' => 'Crédito']],
+            ['key' => 'parent', 'label' => 'Código de la cuenta padre', 'type' => 'text', 'max' => 20],
+        ]],
+        'fiscal_responsibilities' => ['label' => 'Responsabilidades fiscales', 'fields' => []],
+        // Solo de cada empresa: el administrador las crea (no hay nada que importar).
+        'branches' => ['label' => 'Sedes', 'scope' => 'tenant', 'fields' => [
+            ['key' => 'address', 'label' => 'Dirección', 'type' => 'text', 'max' => 255],
+            ['key' => 'phone', 'label' => 'Teléfono', 'type' => 'text', 'max' => 30],
+            ['key' => 'city', 'label' => 'Ciudad', 'type' => 'text', 'max' => 100],
+        ]],
+    ],
+];

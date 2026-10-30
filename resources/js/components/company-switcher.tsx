@@ -27,11 +27,14 @@ export function CompanySwitcher() {
         return null;
     }
 
+    const companyList = Array.isArray(companies) ? companies : [];
+
     // La empresa actual siempre primero; el resto en el orden recibido.
     const ordered = [
         company,
-        ...companies.filter((item) => item.id !== company.id),
+        ...companyList.filter((item) => item.id !== company.id),
     ];
+
     const visible = ordered.slice(0, MAX_VISIBLE);
 
     const switchTo = (id: number) => {

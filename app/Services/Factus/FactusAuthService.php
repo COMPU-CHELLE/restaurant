@@ -3,22 +3,16 @@
 namespace App\Services\Factus;
 
 use App\Models\Support\FactusService;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use RuntimeException;
-use Throwable;
+use Carbon\Carbon;
+use Exception;
 
-/**
- * Autenticación OAuth2 con Factus (password grant + refresh token), portada de Chellnova.
- * Diferencias: nunca escribe credenciales en el log y la URL del token sale de la URL base
- * de la configuración (que debe ser un host oficial, ver config/factus.php).
- */
 class FactusAuthService
 {
     public function getToken(FactusService $factus): string
     {
-        // Margen de 60 segundos para no usar un token a punto de vencer.
+        // margen de 60 segundos
         if ($factus->token && $factus->token_expires_at?->gt(now()->addSeconds(60))) {
             return $factus->token;
         }
@@ -26,9 +20,9 @@ class FactusAuthService
         if ($factus->hasRefreshToken()) {
             try {
                 return $this->refreshToken($factus);
-            } catch (Throwable) {
-                Log::warning('[Factus] El refresh token falló; se usa login con usuario y contraseña.', [
-                    'codemp' => $factus->codemp,
+            } catch (\Exception $e) {
+                Log::warning('[FactusAuthService] Refresh falló, usando login', [
+                    'error' => $e->getMessage()
                 ]);
             }
         }
@@ -36,18 +30,34 @@ class FactusAuthService
         return $this->passwordLogin($factus);
     }
 
+    /* =========================
+     |  PASSWORD LOGIN
+     ========================= */
+
     protected function passwordLogin(FactusService $factus): string
     {
-        $response = Http::asForm()->acceptJson()->timeout(20)->post($this->tokenUrl($factus), [
-            'grant_type' => 'password',
+        Log::debug('Factus login payload', [
             'client_id' => $factus->client_id,
             'client_secret' => $factus->client_secret,
             'username' => $factus->username,
             'password' => $factus->password,
         ]);
 
+        $response = Http::asForm()->timeout(20)->post(
+            $this->tokenUrl($factus),
+            [
+                'grant_type'     => 'password',
+                'client_id'      => $factus->client_id,
+                'client_secret'  => $factus->client_secret,
+                'username'       => $factus->username,
+                'password'       => $factus->password,
+            ]
+        );
+
         if (! $response->successful()) {
-            throw new RuntimeException($this->errorMessage($response));
+            throw new Exception(
+                'Factus auth error: ' . ($response->json('error_description') ?? $response->body())
+            );
         }
 
         return $this->storeTokenData($factus, $response->json());
@@ -55,15 +65,20 @@ class FactusAuthService
 
     protected function refreshToken(FactusService $factus): string
     {
-        $response = Http::asForm()->acceptJson()->timeout(20)->post($this->tokenUrl($factus), [
-            'grant_type' => 'refresh_token',
-            'client_id' => $factus->client_id,
-            'client_secret' => $factus->client_secret,
-            'refresh_token' => $factus->refresh_token,
-        ]);
+        $response = Http::asForm()
+            ->withHeaders(['Accept' => 'application/json'])
+            ->post(
+                $this->tokenUrl($factus),
+                [
+                    'grant_type'     => 'refresh_token',
+                    'client_id'      => $factus->client_id,
+                    'client_secret' => $factus->client_secret,
+                    'refresh_token' => $factus->refresh_token,
+                ]
+            );
 
         if (! $response->successful()) {
-            throw new RuntimeException($this->errorMessage($response));
+            throw new Exception('Factus refresh error: ' . $response->body());
         }
 
         return $this->storeTokenData($factus, $response->json());
@@ -71,57 +86,71 @@ class FactusAuthService
 
     protected function storeTokenData(FactusService $factus, array $data): string
     {
-        $factus->forceFill([
-            'token' => $data['access_token'],
-            'refresh_token' => $data['refresh_token'] ?? $factus->refresh_token,
-            'token_expires_at' => Carbon::now()->addSeconds((int) ($data['expires_in'] ?? 3600)),
-        ])->save();
+        $factus->update([
+            'token'            => $data['access_token'],
+            'refresh_token'    => $data['refresh_token'] ?? $factus->refresh_token,
+            'token_expires_at' => Carbon::now()->addSeconds($data['expires_in']),
+        ]);
 
         return $data['access_token'];
     }
 
-    /**
-     * Prueba las credenciales sin tocar los datos guardados, salvo el token si ya existe la configuración.
-     *
-     * @param  array  $credentials  base_url, client_id, client_secret, username, password
-     * @return array{success:bool, error?:string, expires_in?:int}
-     */
-    public function testLogin(array $credentials, ?FactusService $stored = null): array
+    public function testLogin(array $data): array
     {
-        $probe = (new FactusService())->forceFill($credentials);
 
+        // Crear instancia temporal del modelo con los datos recibidos
+        $factus = new FactusService($data);
         try {
-            $response = Http::asForm()->acceptJson()->timeout(20)->post($this->tokenUrl($probe), [
-                'grant_type' => 'password',
-                'client_id' => $probe->client_id,
-                'client_secret' => $probe->client_secret,
-                'username' => $probe->username,
-                'password' => $probe->password,
-            ]);
-
+            $response = Http::asForm()->post(
+                $this->tokenUrl($factus),
+                [
+                    'grant_type'     => 'password',
+                    'client_id'      => $factus->client_id,
+                    'client_secret'  => $factus->client_secret,
+                    'username'       => $factus->username,
+                    'password'       => $factus->password,
+                ]
+            );
             if (! $response->successful()) {
-                return ['success' => false, 'error' => $this->errorMessage($response)];
+                return [
+                    'success' => false,
+                    'error' => $response->json('error_description') ?? $response->body(),
+                ];
             }
 
-            if ($stored) {
-                $this->storeTokenData($stored, $response->json());
+            // Si existe un registro real, guárdalo solo si el environment y company_id coinciden
+            if (!empty($data['company_id']) && !empty($data['environment'])) {
+                $real = FactusService::where('codemp', $data['company_id'])
+                    ->where('environment', $data['environment'])
+                    ->first();
+                if ($real) {
+                    $real->update([
+                        'token'            => $response->json('access_token'),
+                        'refresh_token'    => $response->json('refresh_token') ?? $real->refresh_token,
+                        'token_expires_at' => Carbon::now()->addSeconds($response->json('expires_in')),
+                    ]);
+                }
             }
 
-            return ['success' => true, 'expires_in' => (int) $response->json('expires_in', 0)];
-        } catch (Throwable $e) {
-            return ['success' => false, 'error' => 'No se pudo contactar a Factus: ' . $e->getMessage()];
+            return [
+                'success' => true,
+                'token' => $response->json('access_token'),
+                'refresh_token' => $response->json('refresh_token'),
+                'expires_in' => $response->json('expires_in'),
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
         }
     }
 
     protected function tokenUrl(FactusService $factus): string
     {
-        return rtrim((string) $factus->base_url, '/') . '/oauth/token';
-    }
-
-    protected function errorMessage($response): string
-    {
-        $detail = $response->json('error_description') ?? $response->json('message') ?? 'respuesta ' . $response->status();
-
-        return 'Factus rechazó la autenticación: ' . $detail;
+        return match ($factus->environment) {
+            'sandbox' => 'https://api-sandbox.factus.com.co/oauth/token',
+            default   => 'https://api.factus.com.co/oauth/token',
+        };
     }
 }

@@ -20,6 +20,7 @@ return new class extends Migration
             $table->foreign('codmod')->references('codmov')->on('modules')->restrictOnDelete();
             $table->foreign('codniv')->references('codmov')->on('levels')->restrictOnDelete();
             $table->foreign('codite')->references('codmov')->on('levels')->restrictOnDelete();
+            $table->bigInteger('state')->default(1);
 
             $table->string('host', 45)->nullable()->comment('Equipo del cliente');
             $table->string('codope', 50)->nullable()->comment('Código del operador');

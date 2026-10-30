@@ -55,7 +55,7 @@ type CompanyForm = {
     empadd: string;
     emppho: string;
     empema: string;
-    country_code: string;
+    codcoi: string;
 };
 
 const emptyForm: CompanyForm = {
@@ -66,7 +66,7 @@ const emptyForm: CompanyForm = {
     empadd: '',
     emppho: '',
     empema: '',
-    country_code: 'CO',
+    codcoi: 'CO',
 };
 
 const URL = '/soporte/empresas';
@@ -111,7 +111,7 @@ export default function Empresas({ companies, filters }: Props) {
             empadd: company.address ?? '',
             emppho: company.phone ?? '',
             empema: company.email ?? '',
-            country_code: company.country,
+            codcoi: company.country,
         });
         form.clearErrors();
         setOpen(true);
@@ -329,10 +329,10 @@ export default function Empresas({ companies, filters }: Props) {
                         <Input id="code" value={form.data.code} autoFocus
                             onChange={(e) => form.setData('code', e.target.value.toUpperCase())} />
                     </Field>
-                    <Field label="País" htmlFor="country_code" error={form.errors.country_code}
+                    <Field label="País" htmlFor="codcoi" error={form.errors.codcoi}
                         hint="Código de 2 letras. Ej.: CO">
-                        <Input id="country_code" maxLength={2} value={form.data.country_code}
-                            onChange={(e) => form.setData('country_code', e.target.value.toUpperCase())} />
+                        <Input id="codcoi" maxLength={2} value={form.data.codcoi}
+                            onChange={(e) => form.setData('codcoi', e.target.value.toUpperCase())} />
                     </Field>
                 </div>
 

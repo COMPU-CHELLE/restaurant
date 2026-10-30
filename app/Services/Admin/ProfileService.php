@@ -1,0 +1,203 @@
+<?php
+
+namespace App\Services\Admin;
+
+use App\Models\Support\Permission;
+use App\Models\Support\UserCompanyContext;
+use App\Models\Tenant\Profile;
+use App\Models\Tenant\ProfilePermission;
+use App\Services\Audit\Audit;
+use App\Services\BaseService;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
+
+/**
+ * Perfiles de la empresa activa (base tenant) y sus permisos (catálogo de la base support).
+ */
+class ProfileService extends BaseService
+{
+    protected string $model = Profile::class;
+
+    protected string $label = 'Perfil';
+
+    protected array $searchable = ['code', 'name', 'detail'];
+
+    protected array $sortable = ['codmov', 'code', 'name', 'state'];
+
+    protected array $fields = ['code', 'name', 'detail'];
+
+    protected bool $audited = true;
+
+    private const ACTION_ORDER = [
+        'view', 'store', 'update', 'toggle', 'delete', 'restore',
+        'layout', 'pay', 'move', 'split', 'open', 'close', 'movement', 'prices', 'images', 'print',
+    ];
+
+    public function find(int $id): Profile
+    {
+        return Profile::query()->findOrFail($id);
+    }
+
+    public function paginateRows(array $filters, int $perPage): LengthAwarePaginator
+    {
+        $paginator = $this->paginate($filters, $perPage);
+        $ids = $paginator->getCollection()->pluck('codmov');
+
+        $permissions = ProfilePermission::query()->whereIn('profile_id', $ids)->get()->groupBy('profile_id');
+
+        $users = UserCompanyContext::query()
+            ->where('company_id', $this->companyId())
+            ->whereIn('profile_id', $ids)
+            ->selectRaw('profile_id, count(*) as total')
+            ->groupBy('profile_id')
+            ->pluck('total', 'profile_id');
+
+        return $paginator->through(fn (Profile $profile) => [
+            'id' => (int) $profile->codmov,
+            'code' => $profile->code,
+            'name' => $profile->name,
+            'detail' => $profile->detail,
+            'state' => (int) $profile->state,
+            'permission_ids' => $permissions->get($profile->codmov, collect())->pluck('permission_id')->map(fn ($i) => (int) $i)->values()->all(),
+            'users_count' => (int) ($users[$profile->codmov] ?? 0),
+        ]);
+    }
+
+    /**
+     * Catálogo de permisos asignables, agrupado Módulo → Nivel → acciones.
+     * Solo existen permisos para los módulos operativos (los de administración no se asignan por perfil).
+     */
+    public function catalog(): array
+    {
+        $permissions = Permission::query()->whereNotNull('codniv')->with(['module', 'level'])->get()
+            ->filter(fn ($p) => $p->module && $p->level);
+
+        return $permissions->groupBy('codmod')
+            ->map(function ($modulePermissions) {
+                $module = $modulePermissions->first()->module;
+
+                $levels = $modulePermissions->groupBy('codniv')->map(function ($levelPermissions) {
+                    $level = $levelPermissions->first()->level;
+
+                    return [
+                        'sort' => $level->code,
+                        'id' => (int) $level->codmov,
+                        'name' => $level->name,
+                        'permissions' => $levelPermissions
+                            ->map(fn ($p) => ['id' => (int) $p->codmov, 'action' => Str::afterLast($p->name, '.')])
+                            ->sortBy(fn ($p) => array_search($p['action'], self::ACTION_ORDER, true) ?: 99)
+                            ->values()->all(),
+                    ];
+                })->sortBy('sort')->map(fn ($l) => collect($l)->except('sort')->all())->values()->all();
+
+                return ['sort' => $module->code, 'code' => $module->code, 'name' => $module->name, 'levels' => $levels];
+            })
+            ->sortBy('sort')->map(fn ($m) => collect($m)->except('sort')->all())->values()->all();
+    }
+
+    public function store(array $payload): array
+    {
+        return $this->transaction(function () use ($payload) {
+            $profile = new Profile();
+            $profile->forceFill($this->stamp($this->onlyFields($payload), true) + ['state' => 1])->save();
+
+            $this->syncPermissions($profile, $payload['permissions'] ?? []);
+
+            return ['data' => $profile, 'flash' => $this->toast('Perfil creado correctamente.')];
+        });
+    }
+
+    public function update(Model $record, array $payload): array
+    {
+        return $this->transaction(function () use ($record, $payload) {
+            $record->forceFill($this->stamp($this->onlyFields($payload), false))->save();
+
+            $this->syncPermissions($record, $payload['permissions'] ?? []);
+
+            return ['data' => $record, 'flash' => $this->toast('Perfil actualizado correctamente.')];
+        });
+    }
+
+    public function toggleState(Model $record): array
+    {
+        // Un perfil inactivo deja sin acceso (403) a quienes lo tienen asignado.
+        if ((int) $record->state === 1 && $this->usersOf((int) $record->codmov) > 0) {
+            return ['data' => $record, 'flash' => $this->toast('No puedes inactivar un perfil con usuarios asignados. Cámbiales el perfil primero.', 'error')];
+        }
+
+        return parent::toggleState($record);
+    }
+
+    public function destroy(Profile $profile): array
+    {
+        if ($this->usersOf((int) $profile->codmov) > 0) {
+            return ['data' => $profile, 'flash' => $this->toast('No puedes eliminar un perfil con usuarios asignados.', 'error')];
+        }
+
+        $this->transaction(function () use ($profile) {
+            ProfilePermission::query()->where('profile_id', $profile->codmov)->delete();
+            $profile->delete();
+        });
+
+        return ['data' => $profile, 'flash' => $this->toast('Perfil eliminado.')];
+    }
+
+    /**
+     * Reemplaza los permisos del perfil. Descarta ids inválidos y garantiza que todo nivel
+     * con alguna acción tenga también "view" (sin ver la pantalla no sirve poder editarla).
+     */
+    protected function syncPermissions(Profile $profile, array $permissionIds): void
+    {
+        $ids = collect($permissionIds)->map(fn ($id) => (int) $id)->unique()->values();
+
+        $valid = Permission::query()->whereIn('codmov', $ids)->whereNotNull('codniv')->get(['codmov', 'codniv']);
+
+        $views = Permission::query()
+            ->whereIn('codniv', $valid->pluck('codniv')->unique())
+            ->where('name', 'like', '%.view')
+            ->pluck('codmov');
+
+        $final = $valid->pluck('codmov')->merge($views)->unique()->values();
+
+        $before = ProfilePermission::query()->where('profile_id', $profile->codmov)
+            ->pluck('permission_id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+
+        ProfilePermission::query()->where('profile_id', $profile->codmov)->delete();
+
+        $now = now();
+        ProfilePermission::query()->insert($final->map(fn ($permissionId) => [
+            'profile_id' => $profile->codmov,
+            'permission_id' => $permissionId,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->all());
+
+        $after = $final->map(fn ($id) => (int) $id)->sort()->values()->all();
+
+        // La inserción masiva no dispara eventos de Eloquent: se deja constancia a mano.
+        if ($before !== $after) {
+            Audit::record(
+                'UPDATE',
+                'PROFILE_PERMISSIONS',
+                "Se actualizaron los permisos del perfil {$profile->code}",
+                ['permission_ids' => $before],
+                ['permission_ids' => $after],
+                $profile->getConnection()->getDatabaseName(),
+            );
+        }
+    }
+
+    protected function usersOf(int $profileId): int
+    {
+        return UserCompanyContext::query()
+            ->where('company_id', $this->companyId())
+            ->where('profile_id', $profileId)
+            ->count();
+    }
+
+    protected function companyId(): int
+    {
+        return (int) session('company_id');
+    }
+}

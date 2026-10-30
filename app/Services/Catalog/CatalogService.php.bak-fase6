@@ -1,0 +1,163 @@
+<?php
+
+namespace App\Services\Catalog;
+
+use App\Services\BaseService;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+
+/** Motor común de catálogos (base support para soporte, base del tenant para cada empresa). */
+abstract class CatalogService extends BaseService
+{
+    protected string $label = 'Parámetro';
+
+    protected array $searchable = ['code', 'name', 'detail'];
+
+    protected array $sortable = ['codmov', 'code', 'name', 'state'];
+
+    protected bool $audited = true;
+
+    protected string $type = '';
+
+    public function definition(string $type): array
+    {
+        $definition = config("catalogs.types.{$type}");
+
+        abort_if($definition === null, 404);
+
+        return ['key' => $type] + $definition;
+    }
+
+    /** Lista de catálogos con la cantidad de elementos de cada uno. */
+    public function types(): array
+    {
+        $counts = ($this->model)::query()->select('type', DB::raw('count(*) as total'))->groupBy('type')->pluck('total', 'type');
+
+        return collect(config('catalogs.types'))
+            ->map(fn ($definition, $key) => ['key' => $key, 'label' => $definition['label'], 'count' => (int) ($counts[$key] ?? 0)])
+            ->values()
+            ->all();
+    }
+
+    public function paginateType(string $type, array $filters, int $perPage): LengthAwarePaginator
+    {
+        $this->definition($type);
+        $this->type = $type;
+
+        return $this->paginate($filters, $perPage)->through(fn (Model $item) => $this->toRow($item));
+    }
+
+    public function toRow(Model $item): array
+    {
+        return [
+            'id' => (int) $item->codmov,
+            'code' => $item->code,
+            'name' => $item->name,
+            'detail' => $item->detail,
+            'extra' => $item->extra ?? [],
+            'state' => (int) $item->state,
+            'source_id' => $item->source_id ?? null,
+        ];
+    }
+
+    /** Opciones de los campos que apuntan a otro catálogo: ['tax_types' => [['code', 'name'], …]]. */
+    public function references(string $type): array
+    {
+        $references = [];
+
+        foreach ($this->definition($type)['fields'] ?? [] as $field) {
+            if (($field['type'] ?? null) === 'catalog') {
+                $references[$field['source']] = ($this->model)::query()
+                    ->where('type', $field['source'])->where('state', 1)->orderBy('code')->get(['code', 'name'])
+                    ->map(fn ($item) => ['code' => $item->code, 'name' => $item->name])->all();
+            }
+        }
+
+        return $references;
+    }
+
+    public function createItem(string $type, array $payload): array
+    {
+        $definition = $this->definition($type);
+
+        return $this->transaction(function () use ($type, $definition, $payload) {
+            $class = $this->model;
+            $item = new $class();
+            $item->forceFill($this->stamp([
+                'type' => $type,
+                'code' => $payload['code'],
+                'name' => $payload['name'],
+                'detail' => $payload['detail'] ?? null,
+                'extra' => $this->normalizeExtra($definition, $payload['extra'] ?? []),
+                'state' => 1,
+            ], true))->save();
+
+            return ['data' => $item, 'flash' => $this->toast("{$definition['label']}: registro creado correctamente.")];
+        });
+    }
+
+    public function updateItem(string $type, int $id, array $payload): array
+    {
+        $definition = $this->definition($type);
+        $item = $this->findItem($type, $id);
+
+        return $this->transaction(function () use ($item, $definition, $payload) {
+            $item->forceFill($this->stamp([
+                'code' => $payload['code'],
+                'name' => $payload['name'],
+                'detail' => $payload['detail'] ?? null,
+                'extra' => $this->normalizeExtra($definition, $payload['extra'] ?? []),
+            ], false))->save();
+
+            return ['data' => $item, 'flash' => $this->toast("{$definition['label']}: registro actualizado correctamente.")];
+        });
+    }
+
+    public function toggleItem(string $type, int $id): array
+    {
+        $this->definition($type);
+
+        return $this->toggleState($this->findItem($type, $id));
+    }
+
+    public function destroyItem(string $type, int $id): array
+    {
+        $this->definition($type);
+        $item = $this->findItem($type, $id);
+        $item->delete();
+
+        return ['data' => $item, 'flash' => $this->toast('Registro eliminado.')];
+    }
+
+    protected function findItem(string $type, int $id): Model
+    {
+        return ($this->model)::query()->where('type', $type)->findOrFail($id);
+    }
+
+    protected function query(): Builder
+    {
+        return parent::query()->where('type', $this->type);
+    }
+
+    /** Deja solo los campos del catálogo, con su tipo (números como número, vacíos fuera). */
+    protected function normalizeExtra(array $definition, array $extra): array
+    {
+        $clean = [];
+
+        foreach ($definition['fields'] ?? [] as $field) {
+            $value = $extra[$field['key']] ?? null;
+
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $clean[$field['key']] = $field['type'] === 'number'
+                ? (floor((float) $value) == (float) $value ? (int) $value : (float) $value)
+                : trim((string) $value);
+        }
+
+        return $clean;
+    }
+}
